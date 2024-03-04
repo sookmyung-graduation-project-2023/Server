@@ -1,0 +1,273 @@
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+
+const AWS_REGION = process.env.AWS_REGION;
+
+const ddbClient = new DynamoDBClient({ region: AWS_REGION });
+const docClient = DynamoDBDocumentClient.from(ddbClient);
+
+const postLearningRecord = async(roleplayID, data, auth) =>{
+    try{
+        const userID = auth.id;
+        const ceatedAt = Date.now();
+        if (roleplayID[0] == 'r'){ //맞춤형 역할극 or 학습 기록이 있는 공식 역할극
+            //2-1. 해당 역할극에 대한 총 학습 기록 수정을 위한 확인
+            const getRoleplayCommand = new GetCommand({
+                TableName: "LipRead",
+                Key: {
+                    PK: userID,
+                    SK: roleplayID,
+                },
+                ProjectionExpression: "study"
+            });
+            const studyData = await docClient.send(getRoleplayCommand);
+            
+            //2-2. 역할극에 대한 총 학습 기록 업데이트
+            const newSentences = studyData.Item.study.sentences;
+            for (let i of data.study.sentenceList){
+                if (newSentences[i.sentence]){//해당 key가 있다면
+                    newSentences[i.sentence] +=1;
+                }else{ //해당 key가 없다면
+                    newSentences[i.sentence] = 1;
+                }
+            }
+            const newStudy = {
+                correctRate: (studyData.Item.study.correctRate*studyData.Item.study.learnCnt + data.study.correctRate)/(studyData.Item.study.learnCnt+1),
+                totatlTime: studyData.Item.study.totatlTime+data.study.totatlTime,
+                sentences: newSentences,
+                learnCnt: studyData.Item.study.learnCnt+1
+            };
+            const updateRoleplayCommand = new UpdateCommand({
+                TableName: "LipRead",
+                Key: {
+                    PK: userID,
+                    SK: roleplayID,
+                },
+                UpdateExpression: "set study = :study, updatedAt = :updatedAt",
+                ExpressionAttributeValues: {
+                    ":study": newStudy,
+                    ":updatedAt": ceatedAt,
+                },
+                ReturnValues: "NONE",
+            });
+            await docClient.send(updateRoleplayCommand);
+            
+        }else if(roleplayID[0] == 'o'){ //학습 기록이 없는 공식 역할극
+            roleplayID = "r"+roleplayID;
+            //2. 역할극 총 학습 통계를 저장
+            const newSentences = {};
+            for (let i of data.study.sentenceList){
+                newSentences[i.sentence] = 1;
+            }
+            const putRoleCommand = new PutCommand({
+                TableName: "LipRead",
+                Item: {
+                    PK: userID,
+                    SK: roleplayID,
+                    study: {
+                        sentences: newSentences, //List
+                        learnCnt: 1,
+                        totatlTime: data.study.totatlTime,
+                        correctRate: data.study.correctRate
+                    },
+                    updatedAt: ceatedAt,
+                    title: data.title,
+                    emoji: data.emoji
+                },
+            });
+            await docClient.send(putRoleCommand);
+        }
+        
+        //--------공통 작업 사항--------
+        //3-1. 사용자 학습 기록 수정을 위한 확인
+        const getUserCommand = new GetCommand({
+            TableName: "LipRead",
+            Key: {
+                PK: userID,
+                SK: userID,
+            },
+            ProjectionExpression: "sentenceCnt, totatlTime"
+        });
+        const UserData = await docClient.send(getUserCommand);
+        //3-2. 사용자 학습기록 업데이트
+        const updateUserCommand = new UpdateCommand({
+            TableName: "LipRead",
+            Key: {
+                PK: userID,
+                SK: userID,
+            },
+            UpdateExpression: "set sentenceCnt = :sentenceCnt, totatlTime = :totatlTime",
+            ExpressionAttributeValues: {
+                ":sentenceCnt": UserData.Item.sentenceCnt + data.sentenceCnt,
+                ":totatlTime": UserData.Item.totatlTime + data.study.totatlTime
+            },
+            ReturnValues: "NONE",
+        });
+        //1. 학습에 대한 기록 생성
+        const putRecordCommand = new PutCommand({
+            TableName: "LipRead",
+            Item: {
+                PK: userID,
+                SK: "l"+ceatedAt.toString()+roleplayID,
+                title: data.title,
+                emoji: data.emoji,
+                study: {
+                    sentenceList: data.study.sentenceList, //List
+                    totatlTime: data.study.totatlTime,
+                    correctRate: data.study.correctRate
+                }
+            },
+        });
+        //DB에 요청 전송
+        await Promise.all([
+            docClient.send(updateUserCommand),
+            docClient.send(putRecordCommand)
+        ]);
+    }catch(error){
+        throw error;
+    }
+};
+
+const getUserlearningData = async (auth) =>{
+    try{
+        const userID = auth.id;
+        const getUserCommand = new GetCommand({
+            TableName: "LipRead",
+            Key: {
+                PK: userID,
+                SK: userID,
+            },
+            ProjectionExpression: "sentenceCnt, totatlTime"
+        });
+        const userData = await docClient.send(getUserCommand);        
+        return {
+            sentenceCnt: userData.Item.sentenceCnt,
+            totatlTime: userData.Item.totatlTime,
+        };
+    }catch(error){
+        throw error;
+    }
+};
+
+const getUserRoleplayList = async (auth) => {
+    try{
+        const userID = auth.id;
+        const getRoleplayListCommand = new QueryCommand({
+            TableName: "LipRead",
+            KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
+            ExpressionAttributeValues: {
+                ":pk": userID,
+                ":sk": "r"
+            },
+            ProjectionExpression: "SK, title, emoji, updatedAt"
+        });   
+        const roleplayListdata = await docClient.send(getRoleplayListCommand);
+         //최신 순으로 정렬
+        const roleplayList = roleplayListdata.Items;
+        let newRoleplayList = roleplayList.sort((a,b) => (b.updatedAt - a.updatedAt));
+        //가장 최근 3개만 추출
+        let finalRoleplayList = [];
+        let checkTitle = [];
+        for (let i of newRoleplayList){
+            if (checkTitle.indexOf(i.title) < 0 && finalRoleplayList.length < 10){
+                i.roleplayID = i.SK;
+                delete i.SK;
+                delete i.updatedAt;
+                finalRoleplayList.push(i);
+                checkTitle.push(i.title);
+            }
+        } 
+        return finalRoleplayList;   
+        
+    }catch(error){
+        throw error;
+    }
+};
+
+const getUserMonthlyData = async (queryStringParameters, auth) => {
+    try{
+        const userID = auth.id;
+        const year = Number(queryStringParameters.year);
+        const month = Number(queryStringParameters.month);
+        let begin, end;
+        
+        begin = "l"+new Date(year, month-1, 1, 0, 0).getTime(); //0월부터 시작하므로.
+        end = "l"+new Date(year, month, 1, 0, 0).getTime();
+        
+        const getRecordListCommand = new QueryCommand({
+            TableName: "LipRead",
+            KeyConditionExpression: "PK = :pk AND (SK BETWEEN :begin AND :end)",
+            ExpressionAttributeValues: {
+                ":pk": userID,
+                ":begin": begin,
+                ":end": end
+            },
+            ProjectionExpression: "SK, title, emoji",
+            ScanIndexForward: false //최신순
+        });
+        const recordListdata = await docClient.send(getRecordListCommand);
+        
+        const newRecordList = [];
+        const checkDateList = [];
+        for (let i of recordListdata.Items){
+            const day = new Date(Number(i.SK.slice(1, 14))).getDate();
+            const date = new Date(year, month-1, day, 0, 0).getTime();
+            if (checkDateList.indexOf(date) < 0){ //date 객체 없으면
+                const tmp = {
+                    date:date,
+                    study: [
+                        {
+                            recordID: i.SK,
+                            title: i.title,
+                            emoji: i.emoji
+                        }
+                    ]
+                };
+                newRecordList.push(tmp);
+                checkDateList.push(date);
+            }else{ //date 객체 있으면
+                for (let j of newRecordList){
+                    if (j.date == date){
+                        const tmpStudy = {
+                            recordID: i.SK,
+                            title: i.title,
+                            emoji: i.emoji
+                        };
+                        j.study.push(tmpStudy);
+                    }
+                }
+            }
+        }
+        return newRecordList;
+    }catch(error){
+        throw error;
+    }
+};
+
+const getLearningRecord = async (recordID, auth) => {
+    try{
+        const userID = auth.id;
+        const getRecordCommand = new GetCommand({
+            TableName: "LipRead",
+            Key: {
+                PK: userID,
+                SK: recordID,
+            },
+            ProjectionExpression: "SK, title, emoji, study"
+        });
+        const recordData = await docClient.send(getRecordCommand);
+        recordData.Item.recordID = recordData.Item.SK;
+        delete recordData.Item.SK;
+        return recordData.Item
+    }catch(error){
+        throw error;
+    }
+};
+
+export default {
+    postLearningRecord,
+    getUserlearningData,
+    getUserRoleplayList,
+    getUserMonthlyData,
+    getLearningRecord
+};
