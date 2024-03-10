@@ -50,12 +50,21 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
                         responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
                         const chuncks = service.createNewTopicRolePlay(body, auth);
                         for await (const chunk of chuncks) {
-                            responseBody =  {
-                                status: CREATED,
-                                success: true,
-                                message: "역할극 생성 성공",
-                                data: chunk,
-                            };
+                            if (chunk.error){
+                                responseBody =  {
+                                    status: INTERNAL_SERVER_ERROR,
+                                    success: false,
+                                    message: "역할극 생성 오류",
+                                    data: chunk,
+                                };
+                            }else{
+                                responseBody =  {
+                                    status: CREATED,
+                                    success: true,
+                                    message: "역할극 생성 성공",
+                                    data: chunk,
+                                };
+                            }
                             responseStream.write("data: "+ JSON.stringify(responseBody)+ "\n\n");
                         }
                         responseStream.end();

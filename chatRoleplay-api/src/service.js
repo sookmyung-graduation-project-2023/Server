@@ -2,6 +2,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import OpenAI from 'openai';
 import jwt from "jsonwebtoken";
+import axios from 'axios';
 
 const JWT_SECRET = process.env.jwtSecret;
 const AWS_REGION = process.env.AWS_REGION;
@@ -81,23 +82,20 @@ const createText = async (data, roleplayID) =>{
 
 const createNewTopicRolePlay = async function* (data, auth) {
     try{
-        //const userID = auth.id;
+        const userID = auth.id;
         const roleplayID = "rp"+createID();
         const updatedAt = Date.now();
         
-        //채팅 생성
-        await new Promise(r => setTimeout(r, 2000));
-        //const gptText = await createText(data, roleplayID);
+        const gptText = await createText(data, roleplayID);
         yield {
-            roleplatID: roleplayID,
+            roleplayID: roleplayID,
             event: "채팅 생성 완료"
         };
         
-        //Rolrplay 생성
         const putUserCommand = new PutCommand({
             TableName: "LipRead",
             Item: {
-                //PK: userID,
+                PK: userID,
                 SK: roleplayID,
                 title: data.title,
                 description: data.description,
@@ -107,8 +105,8 @@ const createNewTopicRolePlay = async function* (data, auth) {
                 role2: data.role2,
                 role2Desc: data.role2Desc,
                 role2Type: data.role2Type,
-                //emoji: gptText.emoji,
-                //chatList: gptText.chatList,
+                emoji: gptText.emoji,
+                chatList: gptText.chatList,
                 study: {
                     correctRate: 0,
                     sentences: {},
@@ -118,36 +116,33 @@ const createNewTopicRolePlay = async function* (data, auth) {
                 updatedAt: updatedAt
             },
         });
-        //await docClient.send(putUserCommand);
-        await new Promise(r => setTimeout(r, 2000));
+        await docClient.send(putUserCommand);
         yield {
-            roleplatID: roleplayID,
+            roleplayID: roleplayID,
             event: "채팅 업로드 완료"
         };
         
-        await new Promise(r => setTimeout(r, 2000));
-        yield {
-            roleplatID: roleplayID,
-            event: "4개 중 1번째 영상 생성 완료"
-        };
-        
-        await new Promise(r => setTimeout(r, 2000));
-        yield {
-            roleplatID: roleplayID,
-            event: "4개 중 2번째 영상 생성 완료"
-        };
-        
-        await new Promise(r => setTimeout(r, 2000));
-        yield {
-            roleplatID: roleplayID,
-            event: "4개 중 3번째 영상 생성 완료"
-        };
-        
-        await new Promise(r => setTimeout(r, 2000));
-        yield {
-            roleplatID: roleplayID,
-            event: "4개 중 4번째 영상 생성 완료"
-        };
+        let idx = 0;
+        for (let chat of gptText.chatList){
+            const body = {
+                chat: chat
+            };
+            let response = await axios.post('http://54.86.126.77:8000/video', body);
+            const { data } = response;
+            if (data.success == true){
+                yield {
+                    roleplayID: roleplayID,
+                    event: `${idx}번째 영상 생성 완료`
+                };
+            }else{
+                yield {
+                    roleplayID: roleplayID,
+                    event: "영상 생성 시 오류 발생" ,
+                    error: response.message //오류
+                };
+            }
+            idx += 1;
+        }
         
     }catch(error){
         throw error;
