@@ -70,8 +70,39 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
                         responseStream.end();
                     }
                     break;
+                    
                 case "POST /roleplay/usedTopic":
-                    responseBody = await  service.createUsedTopicRolePlay(body, auth);
+                    if (!body.title || !body.parentRoleplayID ){
+                        responseBody =  {
+                            status: BAD_REQUEST,
+                            success: false,
+                            message: "빈 값으로 인한 생성 실패",
+                        };
+                    }else{
+                        //비즈니스 로직
+                        metadata.statusCode = CREATED;
+                        responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
+                        const chuncks = service.createUsedTopicRolePlay(body, auth);   
+                        for await (const chunk of chuncks) {
+                            if (chunk.error){
+                                responseBody =  {
+                                    status: INTERNAL_SERVER_ERROR,
+                                    success: false,
+                                    message: "역할극 생성 오류",
+                                    data: chunk,
+                                };
+                            }else{
+                                responseBody =  {
+                                    status: CREATED,
+                                    success: true,
+                                    message: "역할극 생성 성공",
+                                    data: chunk,
+                                };
+                            }
+                            responseStream.write("data: "+ JSON.stringify(responseBody)+ "\n\n");
+                        }
+                        responseStream.end();
+                    }
                     break;
                 default:
                     responseBody = {
