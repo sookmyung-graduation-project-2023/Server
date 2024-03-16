@@ -1,32 +1,16 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
 import OpenAI from 'openai';
-import jwt from "jsonwebtoken";
 import axios from 'axios';
 
-const JWT_SECRET = process.env.jwtSecret;
 const AWS_REGION = process.env.AWS_REGION;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const videoUrlOrigin = "https://dyxryua47v6ay.cloudfront.net/";
+const videoUrlOrigin = process.env.videoUrlOrigin;
+const VIDEO_SERVER_URL = process.env.VIDEO_SERVER_URL;
 
 const ddbClient = new DynamoDBClient({ region: AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(ddbClient);
-
-const auth = async (accessToken) => {
-    try {
-        const decoded = jwt.verify(accessToken, JWT_SECRET);
-        return {
-            ok: true,
-            id: decoded.id,
-            name: decoded.name,
-        };
-    } catch (error) {
-        return {
-            ok: false,
-            message: error.message,
-        };
-    }
-};
 
 const createID = () => {
     const random = Math.random().toString(36).substring(2, 11);
@@ -35,17 +19,38 @@ const createID = () => {
     return random + nowStr;
 };
 
-const createText = async (data, roleplayID) =>{
+const pushAlarm = async (userID, title) => {
+    const getUserCommand = new GetCommand({
+        TableName: "LipRead",
+        Key: {
+            PK: userID,
+            SK: userID,////////////////////////////
+        },
+        ProjectionExpression: "endpointArn, name"
+    });
+    const getUserResponse = await docClient.send(getUserCommand);
+    
+    const client = new SNSClient({ region: AWS_REGION });
+    const input = {
+        TargetArn: getUserResponse.Item.endpointArn,
+        Subject: "역할극 생성 완료",
+        Message: `${getUserResponse.Item.name} 님이 만든 ${title} 역할극 생성이 완료 되었습니다.`
+    };
+    const command = new PublishCommand(input);
+    await client.send(command);
+};
+
+const createChat = async (data, roleplayID) =>{
     try{
         //프롬프트 생성
         let prompt = `다음 글을 읽고 이모지 1개와 상황극 대사를 만들어. 1. 주제는 ${data.description}이다.
             2. 첫번째 역할은 ${data.role1}이며 "${data.role1Desc}"라는 특징이 있다. 3. 두번째 역할은 ${data.role2}이며 "${data.role2Desc}"라는 특징이 있다. 
-            4. 응답은 아래와 같은 JSON 형식으로 만든다. 이때 chatList의 요소 개수는 6개 이상, 10개 이하 다.
+            4. 응답은 아래와 같은 JSON 형식으로 만들어. 이때 chatList의 요소 개수는 6개 이상, 10개 이하 다.
             {
                 "emoji": 
                 "chatList": [{"text": , "role": }, {"text": , "role": }],
             } `;
-        if (data.mustWords){
+        if (data.mustWords != []){
             let wordStr = "";
             for(let i of data.mustWords){
                 wordStr = wordStr + i +", ";
@@ -62,7 +67,7 @@ const createText = async (data, roleplayID) =>{
             temperature: 0.8, //degree of diversity
         });
         const gptText = JSON.parse(chatCompletion.choices[0].message.content);
-        
+  
         const roleDict = {};
         roleDict[data.role1] = data.role1Type;
         roleDict[data.role2] = data.role2Type;
@@ -80,19 +85,12 @@ const createText = async (data, roleplayID) =>{
     }
 };
 
-const createNewTopicRolePlay = async function* (data, auth) {
+const createNewTopicRolePlay = async (data, auth) => {
     try{
         const userID = auth.id;
         const roleplayID = "rp"+createID();
         const updatedAt = Date.now();
-        
-        const gptText = await createText(data, roleplayID);
-        yield {
-            roleplayID: roleplayID,
-            event: "채팅 생성 완료"
-        };
-        
-        const putUserCommand = new PutCommand({
+        const putRoleplayCommand = new PutCommand({
             TableName: "LipRead",
             Item: {
                 PK: userID,
@@ -105,58 +103,82 @@ const createNewTopicRolePlay = async function* (data, auth) {
                 role2: data.role2,
                 role2Desc: data.role2Desc,
                 role2Type: data.role2Type,
-                emoji: gptText.emoji,
-                chatList: gptText.chatList,
                 study: {
                     correctRate: 0,
                     sentences: {},
                     totalTime: 0,
                     learnCnt: 0
                 },
-                updatedAt: updatedAt
+                updatedAt: updatedAt,
+                status: "inprogress",
+                percentage: 0
             },
         });
-        await docClient.send(putUserCommand);
-        yield {
-            roleplayID: roleplayID,
-            event: "채팅 업로드 완료"
+        const [putRoleplay, gptText] = await Promise.all([
+            docClient.send(putRoleplayCommand), 
+            createChat(data)
+        ]);
+        console.log("역할극 업로드 완료");
+        console.log("채팅 생성 완료");
+        //역할극 채팅 업데이트
+        const updateRoleplayCommand = new UpdateCommand({
+            TableName: "LipRead",
+            Key: {
+                PK: userID,
+                SK: roleplayID,
+            },
+            UpdateExpression: "set chatList = :chatList, emoji = :emoji, percentage = :percentage",
+            ExpressionAttributeValues: {
+                ":chatList": gptText.chatList,
+                ":emoji": gptText.emoji,
+                ":percentage": 10,
+            },
+            ReturnValues: "NONE",
+        });
+        await docClient.send(updateRoleplayCommand);
+        console.log("채팅 업로드 완료");
+        //영상 생성 시작
+        //axios.post(VIDEO_SERVER_URL, gptText.chatList);
+        //알림 전송
+        //pushAlarm(userID, data.title);
+        return {
+            gptText: gptText,
+            roleplayID: roleplayID
         };
-        
-        let idx = 0;
-        for (let chat of gptText.chatList){
-            const body = {
-                chat: chat
-            };
-            let response = await axios.post('http://54.86.126.77:8000/video', body);
-            const { data } = response;
-            if (data.success == true){
-                yield {
-                    roleplayID: roleplayID,
-                    event: `${idx}번째 영상 생성 완료`
-                };
-            }else{
-                yield {
-                    roleplayID: roleplayID,
-                    event: "영상 생성 시 오류 발생" ,
-                    error: response.message //오류
-                };
-            }
-            idx += 1;
-        }
-        
     }catch(error){
+        console.log(error);
         throw error;
     }
 };
 
-const createUsedTopicRolePlay = async function* (data, auth) {
+const createUsedTopicRolePlay = async (data, auth) => {
     try{
         const userID = auth.id;
         const roleplayID = "rp"+createID();
         const updatedAt = Date.now();
         
+        const putRoleplayCommand = new PutCommand({
+            TableName: "LipRead",
+            Item: {
+                PK: userID,
+                SK: roleplayID,
+                title: data.title,
+                study: {
+                    correctRate: 0,
+                    sentences: {},
+                    totalTime: 0,
+                    learnCnt: 0
+                },
+                updatedAt: updatedAt,
+                status: "inprogress",
+                percentage: 0
+            },
+        });
+        await docClient.send(putRoleplayCommand);
+        console.log("역할극 업로드 완료");
+        
         let response;
-        //data.parentRoleplayID를 통한 부모 역할극 데이터 불러오기
+        //roleplayID를 통한 부모 역할극 데이터 불러오기
         if (data.parentRoleplayID.slice(0, 2) == 'rp'){ //맞춤형 역할극인 경우
             const getRoleplayCommand = new GetCommand({
                 TableName: "LipRead",
@@ -164,23 +186,26 @@ const createUsedTopicRolePlay = async function* (data, auth) {
                     PK: userID,
                     SK: data.parentRoleplayID,
                 },
-                ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
+                ProjectionExpression: "title, description, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
             });
             response = await docClient.send(getRoleplayCommand);
             
-        }else if(data.parentRoleplayID.slice(0, 2) == 'ro'){
+        }else if(roleplayID.slice(0, 2) == 'ro'){
             const getRoleplayCommand = new GetCommand({ //공식 역할극 정보 불러오기
                 TableName: "LipRead",
                 Key: {
                     PK: 't',
                     SK: data.parentRoleplayID.slice(1),
                 },
-                ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
+                ProjectionExpression: "title, description, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
             });
             response = await docClient.send(getRoleplayCommand);
         }
-        const newData = {
-            title: data.title,
+        console.log("부모 역할극 데이터 가져오기 완료");
+        console.log(response.Item);
+        
+        //채팅 및 영상 생성
+        const gptText = await createChat({
             description: response.Item.description,
             role1: response.Item.role1,
             role1Desc: response.Item.role1Desc,
@@ -189,66 +214,45 @@ const createUsedTopicRolePlay = async function* (data, auth) {
             role2Desc: response.Item.role2Desc,
             role2Type: response.Item.role2Type,
             mustWords: data.mustWords
-        };
-        //채팅 및 영상 생성
-        const gptText = await createText(newData, roleplayID);
-        yield {
-            roleplayID: roleplayID,
-            event: "채팅 생성 완료"
-        };
+        });
+        console.log("채팅 생성 완료");
+        console.log(gptText.chatList);
         
-        //Rolrplay 생성
-        const putUserCommand = new PutCommand({
+        
+        //역할극 채팅 및 데이터 업데이트
+        const updateRoleplayCommand = new UpdateCommand({
             TableName: "LipRead",
-            Item: {
+            Key: {
                 PK: userID,
                 SK: roleplayID,
-                title: data.title,
-                description: newData.description,
-                role1: newData.role1,
-                role1Desc: newData.role1Desc,
-                role1Type: newData.role1Type,
-                role2: newData.role2,
-                role2Desc: newData.role2Desc,
-                role2Type: newData.role2Type,
-                emoji: gptText.emoji,
-                chatList: gptText.chatList,
-                study: {
-                    correctRate: 0,
-                    sentences: {},
-                    totalTime: 0,
-                    learnCnt: 0
-                },
-                updatedAt: updatedAt
             },
+            UpdateExpression: "set description = :description, role1 = :role1, role1Desc = :role1Desc, role1Type = :role1Type, role2 = :role2, role2Desc = :role2Desc, role2Type = :role2Type, chatList = :chatList, parentTitle = :parentTitle, emoji = :emoji, percentage = :percentage",
+            ExpressionAttributeValues: {
+                ":description": response.Item.description,
+                ":role1": response.Item.role1,
+                ":role1Desc": response.Item.role1Desc,
+                ":role1Type": response.Item.role1Type,
+                ":role2": response.Item.role2,
+                ":role2Desc": response.Item.role2Desc,
+                ":role2Type": response.Item.role2Type,
+                ":chatList": gptText.chatList,
+                ":parentTitle": response.Item.title,
+                ":emoji": gptText.emoji,
+                ":percentage": 10,
+            },
+            ReturnValues: "NONE",
         });
-        await docClient.send(putUserCommand);
-        yield {
-            roleplayID: roleplayID,
-            event: "채팅 업로드 완료"
-        };
+        await docClient.send(updateRoleplayCommand);
+        console.log("채팅 및 데이터 업로드 완료");
         
-        let idx = 0;
-        for (let chat of gptText.chatList){
-            const body = {
-                chat: chat
-            };
-            let response = await axios.post('http://54.86.126.77:8000/video', body);
-            const { data } = response;
-            if (data.success == true){
-                yield {
-                    roleplayID: roleplayID,
-                    event: `${idx}번째 영상 생성 완료`
-                };
-            }else{
-                yield {
-                    roleplayID: roleplayID,
-                    event: "영상 생성 시 오류 발생" ,
-                    error: response.message //오류
-                };
-            }
-            idx += 1;
-        }
+        //영상 생성 시작
+        //axios.post(VIDEO_SERVER_URL, gptText.chatList);
+        //알림 전송
+        //pushAlarm(userID, data.title);
+        return {
+            gptText: gptText,
+            roleplayID: roleplayID
+        };
         
     }catch(error){
         throw error;
@@ -256,7 +260,6 @@ const createUsedTopicRolePlay = async function* (data, auth) {
 };
 
 export default {
-    auth,
     createNewTopicRolePlay,
     createUsedTopicRolePlay,
 };
