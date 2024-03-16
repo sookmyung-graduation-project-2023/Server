@@ -116,7 +116,7 @@ const createNewTopicRolePlay = async (data, auth) => {
         });
         const [putRoleplay, gptText] = await Promise.all([
             docClient.send(putRoleplayCommand), 
-            createChat(data)
+            createChat(data, roleplayID)
         ]);
         console.log("역할극 업로드 완료");
         console.log("채팅 생성 완료");
@@ -138,7 +138,14 @@ const createNewTopicRolePlay = async (data, auth) => {
         await docClient.send(updateRoleplayCommand);
         console.log("채팅 업로드 완료");
         //영상 생성 시작
-        //axios.post(VIDEO_SERVER_URL, gptText.chatList);
+        const body = {
+            chatList: gptText.chatList,
+            userID: userID,
+            roleplayID: roleplayID
+        };
+        axios.post(VIDEO_SERVER_URL, body);
+        //ML 요청이 갈 시간 주기
+        await new Promise(r => setTimeout(r, 2000));
         //알림 전송
         //pushAlarm(userID, data.title);
         return {
@@ -205,16 +212,19 @@ const createUsedTopicRolePlay = async (data, auth) => {
         console.log(response.Item);
         
         //채팅 및 영상 생성
-        const gptText = await createChat({
-            description: response.Item.description,
-            role1: response.Item.role1,
-            role1Desc: response.Item.role1Desc,
-            role1Type: response.Item.role1Type,
-            role2: response.Item.role2,
-            role2Desc: response.Item.role2Desc,
-            role2Type: response.Item.role2Type,
-            mustWords: data.mustWords
-        });
+        const gptText = await createChat(
+            {
+                description: response.Item.description,
+                role1: response.Item.role1,
+                role1Desc: response.Item.role1Desc,
+                role1Type: response.Item.role1Type,
+                role2: response.Item.role2,
+                role2Desc: response.Item.role2Desc,
+                role2Type: response.Item.role2Type,
+                mustWords: data.mustWords
+            }, 
+            roleplayID
+        );
         console.log("채팅 생성 완료");
         console.log(gptText.chatList);
         
@@ -246,7 +256,14 @@ const createUsedTopicRolePlay = async (data, auth) => {
         console.log("채팅 및 데이터 업로드 완료");
         
         //영상 생성 시작
-        //axios.post(VIDEO_SERVER_URL, gptText.chatList);
+        const body = {
+            chatList: gptText.chatList,
+            userID: userID,
+            roleplayID: roleplayID
+        };
+        axios.post(VIDEO_SERVER_URL, body);
+        //ML 요청이 갈 시간 주기
+        await new Promise(r => setTimeout(r, 2000));
         //알림 전송
         //pushAlarm(userID, data.title);
         return {
