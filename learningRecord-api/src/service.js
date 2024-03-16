@@ -33,7 +33,7 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
             }
             const newStudy = {
                 correctRate: (studyData.Item.study.correctRate*studyData.Item.study.learnCnt + data.study.correctRate)/(studyData.Item.study.learnCnt+1),
-                totatlTime: studyData.Item.study.totatlTime+data.study.totatlTime,
+                totalTime: studyData.Item.study.totalTime+data.study.totalTime,
                 sentences: newSentences,
                 learnCnt: studyData.Item.study.learnCnt+1
             };
@@ -67,7 +67,7 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                     study: {
                         sentences: newSentences, //List
                         learnCnt: 1,
-                        totatlTime: data.study.totatlTime,
+                        totalTime: data.study.totalTime,
                         correctRate: data.study.correctRate
                     },
                     updatedAt: ceatedAt,
@@ -86,7 +86,7 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 PK: userID,
                 SK: userID,
             },
-            ProjectionExpression: "sentenceCnt, totatlTime"
+            ProjectionExpression: "sentenceCnt, totalTime"
         });
         const UserData = await docClient.send(getUserCommand);
         //3-2. 사용자 학습기록 업데이트
@@ -96,10 +96,10 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 PK: userID,
                 SK: userID,
             },
-            UpdateExpression: "set sentenceCnt = :sentenceCnt, totatlTime = :totatlTime",
+            UpdateExpression: "set sentenceCnt = :sentenceCnt, totalTime = :totalTime",
             ExpressionAttributeValues: {
                 ":sentenceCnt": UserData.Item.sentenceCnt + data.sentenceCnt,
-                ":totatlTime": UserData.Item.totatlTime + data.study.totatlTime
+                ":totalTime": UserData.Item.totalTime + data.study.totalTime
             },
             ReturnValues: "NONE",
         });
@@ -113,7 +113,7 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 emoji: data.emoji,
                 study: {
                     sentenceList: data.study.sentenceList, //List
-                    totatlTime: data.study.totatlTime,
+                    totalTime: data.study.totalTime,
                     correctRate: data.study.correctRate
                 }
             },
@@ -137,12 +137,12 @@ const getUserlearningData = async (auth) =>{
                 PK: userID,
                 SK: userID,
             },
-            ProjectionExpression: "sentenceCnt, totatlTime"
+            ProjectionExpression: "sentenceCnt, totalTime"
         });
         const userData = await docClient.send(getUserCommand);        
         return {
             sentenceCnt: userData.Item.sentenceCnt,
-            totatlTime: userData.Item.totatlTime,
+            totalTime: userData.Item.totalTime,
         };
     }catch(error){
         throw error;
@@ -165,7 +165,7 @@ const getUserRoleplayList = async (auth) => {
          //최신 순으로 정렬
         const roleplayList = roleplayListdata.Items;
         let newRoleplayList = roleplayList.sort((a,b) => (b.updatedAt - a.updatedAt));
-        //가장 최근 3개만 추출
+        //가장 최근 10개만 추출
         let finalRoleplayList = [];
         let checkTitle = [];
         for (let i of newRoleplayList){
