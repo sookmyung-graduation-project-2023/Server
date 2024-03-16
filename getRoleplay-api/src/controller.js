@@ -20,8 +20,7 @@ const auth = async (accessToken) => {
         const decoded = jwt.verify(accessToken, JWT_SECRET);
         return {
             ok: true,
-            id: decoded.id,
-            name: decoded.name,
+            id: decoded.id
         };
       } catch (error) {
         return {

@@ -69,8 +69,7 @@ def verify_token(token):
             payload = jwt.decode(token, key=JWT_SECRET, algorithms='HS256')
             return {
                 'ok': True,
-                'id': payload['id'],
-                'name': payload['name']
+                'id': payload['id']
             }
         except jwt.ExpiredSignatureError:
             return {
@@ -85,5 +84,5 @@ def verify_token(token):
         except Exception as e:
             return {
                 'ok': False,
-                'message': e
+                'message': str(e)
             }
