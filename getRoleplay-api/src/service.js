@@ -8,7 +8,7 @@ const docClient = DynamoDBDocumentClient.from(ddbClient);
 
 const getOfficialRoleplayList = async (queryStringParameters, auth) => {
     try{
-        //공식 열할극 리스트
+        //공식 역할극 리스트
         const getOfficialRoleplayListCommand = new QueryCommand({
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
@@ -62,9 +62,9 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
         }
         return response;
     }catch(error){
-        throw error
+        throw error;
     }  
-}
+};
 
 const getPersonalRoleplayList = async (auth) => {
     try{
@@ -76,10 +76,17 @@ const getPersonalRoleplayList = async (auth) => {
                 ":pk": userID,
                 ":sk": "rp"
             },
-            ProjectionExpression: "SK, title, emoji, parentTitle, updatedAt"
+            ProjectionExpression: "SK, title, emoji, parentTitle, updatedAt, #s",
+            ExpressionAttributeNames: {'#s': 'status'},
         });
         const data = await docClient.send(getPersonalRoleplayListCommand);
-        const response = data.Items;
+        //이미 생성 완료된 역할극만 모으기
+        const response = [];
+        for (let roleplay of data.Items){
+            if (roleplay.status == "done"){
+                response.push(roleplay);
+            }
+        }
         //최신 순으로 정렬
         let newResponse = response.sort((a,b) => (b.updatedAt - a.updatedAt));
         for (let i of newResponse){
@@ -91,7 +98,7 @@ const getPersonalRoleplayList = async (auth) => {
     }catch(error){
         throw error;
     }
-}
+};
 
 const getRoleplay = async (roleplayID, auth) => {
     try{
