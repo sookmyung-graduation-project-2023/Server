@@ -11,7 +11,8 @@ export const handler = async (event, context) => {
         case "GET /refresh":
             const accessToken = event.headers.authorization.split('Bearer ') [1];
             const refreshToken = event.headers.refresh;
-            responseBody = await controller.refresh(accessToken, refreshToken);
+            const deviceToken = event.headers.devicetoken;
+            responseBody = await controller.refresh(accessToken, refreshToken, deviceToken);
             break;
         default:
             const BAD_REQUEST = 400;

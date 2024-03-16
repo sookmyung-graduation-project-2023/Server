@@ -17,7 +17,7 @@ const DB_ERROR = 600;
 
 const login = async (data) => {
     try {
-        if (!data.id || !data.email || !data.name){
+        if (!data.id || !data.email || !data.name || !data.deviceToken ){
             return {
                 status: BAD_REQUEST,
                 success: false,
@@ -47,16 +47,16 @@ const login = async (data) => {
     }
 };
 
-const refresh = async (accessToken, refreshToken) =>{
+const refresh = async (accessToken, refreshToken, deviceToken) =>{
     try {
-        if (!accessToken || !refreshToken ){
+        if (!accessToken || !refreshToken || !deviceToken){
             return {
                 status: BAD_REQUEST,
                 success: false,
                 message: "빈 값으로 인한 토큰 재발급 실패",
             };
         }
-        const refresh = await service.refresh(accessToken, refreshToken);
+        const refresh = await service.refresh(accessToken, refreshToken, deviceToken);
         return {
             status: CREATED,
             success: true,
