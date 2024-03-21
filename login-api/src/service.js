@@ -173,7 +173,7 @@ const refresh = async (accessToken, refreshToken, deviceToken) => {
         }
         const refreshTokenResult = await verifyToken(refreshToken);
         if(refreshTokenResult.ok == false){ //만료된 refresh token이면 에러
-            const error = new Error("만료된 refresh token으로 인한 실패");
+            const error = new Error("만료된 refresh token으로 인한 실패 login 필요");
             error.statusCode = 400;
             throw error;
         }
@@ -193,7 +193,7 @@ const getAccessToken = (id) => {
     const token = jwt.sign(
         payload,
         JWT_SECRET,
-        { expiresIn: '1h' }, //1시간 지속
+        { expiresIn: '2d' }, //1시간 지속
     );
     return token;
 };
