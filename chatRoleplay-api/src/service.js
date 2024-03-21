@@ -19,38 +19,17 @@ const createID = () => {
     return random + nowStr;
 };
 
-const pushAlarm = async (userID, title) => {
-    const getUserCommand = new GetCommand({
-        TableName: "LipRead",
-        Key: {
-            PK: userID,
-            SK: userID,////////////////////////////
-        },
-        ProjectionExpression: "endpointArn, name"
-    });
-    const getUserResponse = await docClient.send(getUserCommand);
-    
-    const client = new SNSClient({ region: AWS_REGION });
-    const input = {
-        TargetArn: getUserResponse.Item.endpointArn,
-        Subject: "역할극 생성 완료",
-        Message: `${getUserResponse.Item.name} 님이 만든 ${title} 역할극 생성이 완료 되었습니다.`
-    };
-    const command = new PublishCommand(input);
-    await client.send(command);
-};
-
 const createChat = async (data, roleplayID) =>{
     try{
         //프롬프트 생성
         let prompt = `다음 글을 읽고 이모지 1개와 상황극 대사를 만들어. 1. 주제는 ${data.description}이다.
             2. 첫번째 역할은 ${data.role1}이며 "${data.role1Desc}"라는 특징이 있다. 3. 두번째 역할은 ${data.role2}이며 "${data.role2Desc}"라는 특징이 있다. 
-            4. 응답은 아래와 같은 JSON 형식으로 만들어. 이때 chatList의 요소 개수는 6개 이상, 10개 이하 다.
+            4. 응답은 아래와 같은 JSON 형식으로 만들어. 이때 chatList의 요소 개수는 4개 이하 다.
             {
                 "emoji": 
                 "chatList": [{"text": , "role": }, {"text": , "role": }],
             } `;
-        if (data.mustWords != []){
+        if (data.mustWords != [] ){
             let wordStr = "";
             for(let i of data.mustWords){
                 wordStr = wordStr + i +", ";
@@ -90,6 +69,8 @@ const createNewTopicRolePlay = async (data, auth) => {
         const userID = auth.id;
         const roleplayID = "rp"+createID();
         const updatedAt = Date.now();
+        console.log(data.title);
+        
         const putRoleplayCommand = new PutCommand({
             TableName: "LipRead",
             Item: {
@@ -131,7 +112,7 @@ const createNewTopicRolePlay = async (data, auth) => {
             ExpressionAttributeValues: {
                 ":chatList": gptText.chatList,
                 ":emoji": gptText.emoji,
-                ":percentage": 10,
+                ":percentage": 10
             },
             ReturnValues: "NONE",
         });
@@ -145,9 +126,7 @@ const createNewTopicRolePlay = async (data, auth) => {
         };
         axios.post(VIDEO_SERVER_URL, body);
         //ML 요청이 갈 시간 주기
-        await new Promise(r => setTimeout(r, 2000));
-        //알림 전송
-        //pushAlarm(userID, data.title);
+        await new Promise(r => setTimeout(r, 2000)); 
         return {
             gptText: gptText,
             roleplayID: roleplayID
@@ -163,6 +142,7 @@ const createUsedTopicRolePlay = async (data, auth) => {
         const userID = auth.id;
         const roleplayID = "rp"+createID();
         const updatedAt = Date.now();
+        console.log(roleplayID);
         
         const putRoleplayCommand = new PutCommand({
             TableName: "LipRead",
@@ -184,6 +164,8 @@ const createUsedTopicRolePlay = async (data, auth) => {
         await docClient.send(putRoleplayCommand);
         console.log("역할극 업로드 완료");
         
+        console.log("부모 역할극");
+        console.log(data.parentRoleplayID);
         let response;
         //roleplayID를 통한 부모 역할극 데이터 불러오기
         if (data.parentRoleplayID.slice(0, 2) == 'rp'){ //맞춤형 역할극인 경우
@@ -197,18 +179,24 @@ const createUsedTopicRolePlay = async (data, auth) => {
             });
             response = await docClient.send(getRoleplayCommand);
             
-        }else if(roleplayID.slice(0, 2) == 'ro'){
+        }else if(data.parentRoleplayID.slice(0, 2) == 'ro'){
+            console.log(data.parentRoleplayID.substr(1));
             const getRoleplayCommand = new GetCommand({ //공식 역할극 정보 불러오기
                 TableName: "LipRead",
                 Key: {
                     PK: 't',
-                    SK: data.parentRoleplayID.slice(1),
+                    SK: data.parentRoleplayID.substr(1),
                 },
                 ProjectionExpression: "title, description, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
             });
             response = await docClient.send(getRoleplayCommand);
         }
         console.log("부모 역할극 데이터 가져오기 완료");
+        if (!response.Item){
+            const error = new Error("부모 역할극 ID 비정상");
+            error.statusCode = 400;
+            throw error;
+        }
         console.log(response.Item);
         
         //채팅 및 영상 생성
@@ -227,7 +215,6 @@ const createUsedTopicRolePlay = async (data, auth) => {
         );
         console.log("채팅 생성 완료");
         console.log(gptText.chatList);
-        
         
         //역할극 채팅 및 데이터 업데이트
         const updateRoleplayCommand = new UpdateCommand({
@@ -264,14 +251,13 @@ const createUsedTopicRolePlay = async (data, auth) => {
         axios.post(VIDEO_SERVER_URL, body);
         //ML 요청이 갈 시간 주기
         await new Promise(r => setTimeout(r, 2000));
-        //알림 전송
-        //pushAlarm(userID, data.title);
         return {
             gptText: gptText,
             roleplayID: roleplayID
         };
         
     }catch(error){
+        console.log(error);
         throw error;
     }
 };
