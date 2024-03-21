@@ -21,7 +21,8 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 ProjectionExpression: "study"
             });
             const studyData = await docClient.send(getRoleplayCommand);
-            
+            console.log("기존 역할극 학습 데이터");
+            console.log(studyData.Item.study);
             //2-2. 역할극에 대한 총 학습 기록 업데이트
             const newSentences = studyData.Item.study.sentences;
             for (let i of data.study.sentenceList){
@@ -51,6 +52,8 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 ReturnValues: "NONE",
             });
             await docClient.send(updateRoleplayCommand);
+            console.log("기존 역할극 학습 데이터 수정 후");
+            console.log(newStudy);
             
         }else if(roleplayID[0] == 'o'){ //학습 기록이 없는 공식 역할극
             roleplayID = "r"+roleplayID;
@@ -76,6 +79,13 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 },
             });
             await docClient.send(putRoleCommand);
+            console.log("기존 역할극 학습 데이터 수정 후")
+            console.log({
+                sentences: newSentences, //List
+                learnCnt: 1,
+                totalTime: data.study.totalTime,
+                correctRate: data.study.correctRate
+            });
         }
         
         //--------공통 작업 사항--------
@@ -89,6 +99,9 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
             ProjectionExpression: "sentenceCnt, totalTime"
         });
         const UserData = await docClient.send(getUserCommand);
+        console.log("기존 사용자 학습량");
+        console.log(UserData.Item.sentenceCnt);
+        console.log(UserData.Item.totalTime);
         //3-2. 사용자 학습기록 업데이트
         const updateUserCommand = new UpdateCommand({
             TableName: "LipRead",
@@ -103,6 +116,9 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
             },
             ReturnValues: "NONE",
         });
+        console.log("기존 사용자 학습량 수정 후");
+        console.log(UserData.Item.sentenceCnt + data.sentenceCnt);
+        console.log(UserData.Item.totalTime + data.study.totalTime);
         //1. 학습에 대한 기록 생성
         const putRecordCommand = new PutCommand({
             TableName: "LipRead",
@@ -159,22 +175,34 @@ const getUserRoleplayList = async (auth) => {
                 ":pk": userID,
                 ":sk": "r"
             },
-            ProjectionExpression: "SK, title, emoji, updatedAt"
+            ProjectionExpression: "SK, title, emoji, updatedAt, #s",
+            ExpressionAttributeNames: {'#s': 'status'},
         });   
         const roleplayListdata = await docClient.send(getRoleplayListCommand);
-         //최신 순으로 정렬
         const roleplayList = roleplayListdata.Items;
-        let newRoleplayList = roleplayList.sort((a,b) => (b.updatedAt - a.updatedAt));
+        console.log("데이터베이스에 저장된 것");
+        console.log(roleplayList);
+        
+        const doneRoleplayList = [];
+        for (let roleplay of roleplayList){
+            if (roleplay.status != 'inprogress'){
+                doneRoleplayList.push(roleplay);
+            }
+        }
+        console.log("inprogress 제외한 것");
+        console.log(roleplayList);
+        //최신 순으로 정렬
+        let newRoleplayList = doneRoleplayList.sort((a,b) => (b.updatedAt - a.updatedAt));
+        
         //가장 최근 10개만 추출
         let finalRoleplayList = [];
-        let checkTitle = [];
         for (let i of newRoleplayList){
-            if (checkTitle.indexOf(i.title) < 0 && finalRoleplayList.length < 10){
+            if (finalRoleplayList.length < 10){
                 i.roleplayID = i.SK;
                 delete i.SK;
                 delete i.updatedAt;
+                delete i.status;
                 finalRoleplayList.push(i);
-                checkTitle.push(i.title);
             }
         } 
         return finalRoleplayList;   
