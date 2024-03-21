@@ -14,6 +14,8 @@ const ddbClient = new DynamoDBClient({ region: AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(ddbClient);
 
 export const handler = async (event) => {
+    console.log("이벤트");
+    console.log(event);
     for (let record of event.Records){
         console.log("SK: " + record.dynamodb.Keys.SK.S);
         console.log("PK: " + record.dynamodb.Keys.PK.S);
@@ -69,7 +71,8 @@ export const handler = async (event) => {
                 console.log(doneRoleplay);
             }
             console.log("done인 경우 추가하기 성공");
-            //최신 순으로 정렬
+            //최신순으로 정렬
+            console.log("롤플레이");
             let responseData = inprogressRoleplayList.sort((a,b) => (b.updatedAt - a.updatedAt));
             for (let roleplay of responseData){
                 roleplay.roleplayID = roleplay.SK;
@@ -85,15 +88,21 @@ export const handler = async (event) => {
                 data: responseData
             };
             //웹소켓 데이터 전송하기
+            console.log("웹소켓");
             for (let connectionIdObject of websocketList){
+                console.log(connectionIdObject.websocketID);
                 const command = new PostToConnectionCommand({
                     ConnectionId: connectionIdObject.websocketID,
                     Data: Buffer.from(JSON.stringify(data)),
                 });
-                await client.send(command);
+                try{
+                    await client.send(command);
+                    console.log("웹소켓 전송 성공");
+                }catch(error){
+                    console.log(error);
+                }
             }
         }
-    };
-
+    }
  };
   

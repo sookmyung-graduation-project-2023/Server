@@ -1,5 +1,5 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 
 const AWS_REGION = process.env.AWS_REGION;
 
@@ -8,7 +8,7 @@ const docClient = DynamoDBDocumentClient.from(ddbClient);
 
 const getOfficialRoleplayList = async (queryStringParameters, auth) => {
     try{
-        //공식 역할극 리스트
+         //공식 역할극 리스트
         const getOfficialRoleplayListCommand = new QueryCommand({
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
@@ -37,8 +37,8 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
         let response = data.Items;
         const recordResponse = recordData.Items;
         
-        //쿼리 스트링이 있는 경우 카테고리에 속하는 역할극만 뽑아 새로 리스트를 만든다
-        if (queryStringParameters){
+        
+        if (queryStringParameters){ //쿼리 스트링이 존재한다면
             const categoryResponse = [];
             for (let i of response){ //쿼리스트링의 값과 같은 경우만 리스트에 삽입
                 if (i.category == queryStringParameters.category){
@@ -47,12 +47,12 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
             }
             response = categoryResponse;
         }
-        //학습기록이 있는 공식 역할극이 있는 경우 roleplayID를 바꾼다.
+        //학습기록이 있는 공식 역할극의 경우 roleplayID를 바꾼다.
         if (recordResponse){
             for (let i of response){
                 for (let withR of recordResponse){
                     if (i.SK == withR.SK.slice(1)){
-                        i.SK = withR.SK
+                        i.SK = withR.SK;
                     }
                 }
                 i.roleplayID = i.SK;
@@ -60,6 +60,7 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
                 delete i.category;
             }
         }
+        console.log(response);
         return response;
     }catch(error){
         throw error;
@@ -103,6 +104,7 @@ const getPersonalRoleplayList = async (auth) => {
 const getRoleplay = async (roleplayID, auth) => {
     try{
         const userID = auth.id;
+        console.log(roleplayID);
         if (roleplayID.slice(0, 2) == 'rp'){ //맞춤형 역할극인 경우
             const getRoleplayCommand = new GetCommand({
                 TableName: "LipRead",
@@ -124,7 +126,7 @@ const getRoleplay = async (roleplayID, auth) => {
             }
             return response.Item;
             
-        }else if(roleplayID[0] == 'o'){ 
+        }else if(roleplayID[0] == 'o'){ //학습 기록 없는 공식 역할극인 경우
             const getRoleplayCommand = new GetCommand({
                 TableName: "LipRead",
                 Key: {
@@ -137,14 +139,14 @@ const getRoleplay = async (roleplayID, auth) => {
             response.Item.roleplayID = roleplayID;
             return response.Item;
             
-        }else if(roleplayID.slice(0, 2) == 'ro'){ //ro인 경우
+        }else if(roleplayID.slice(0, 2) == 'ro'){ //학습 기록 있는 공식 역할극인 경우
             const getRoleplayCommand = new GetCommand({ //공식 역할극 정보 불러오기
                 TableName: "LipRead",
                 Key: {
                     PK: 't',
                     SK: roleplayID.slice(1),
                 },
-                ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
+                ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type, category"
             });
             const getRecordCommand = new GetCommand({ //역할극 학습 기록 불러오기
                 TableName: "LipRead",
@@ -161,7 +163,6 @@ const getRoleplay = async (roleplayID, auth) => {
             ]);
             roleplayData.Item.roleplayID = roleplayID;
             roleplayData.Item.study =recordData.Item.study;
-            
             if (roleplayData.Item.study.learnCnt == 0){ //학습 횟수가 0이면 study 객체 제거
                 delete roleplayData.Item.study;
             }else{
@@ -171,11 +172,11 @@ const getRoleplay = async (roleplayID, auth) => {
                 delete roleplayData.Item.study.sentences;
             }
             return roleplayData.Item;
-        }        
+        }     
     }catch(error){
-        throw error
+        throw error;
     }
-}
+};
 
 const getRoleplayChatList = async (roleplayID, auth) => {
     try{   
@@ -215,13 +216,13 @@ const getRoleplayChatList = async (roleplayID, auth) => {
         response.Item.roleplayID = roleplayID;
         return response.Item;
     }catch(error){
-        throw error
+        throw error;
     }
-}
+};
 
 export default {
     getOfficialRoleplayList,
     getPersonalRoleplayList,
     getRoleplay,
-    getRoleplayChatList,
+    getRoleplayChatList
 };
