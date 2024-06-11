@@ -6,7 +6,7 @@
 청각 장애인들이 실생활에서 자주 쓰이는 문장을 중심으로 구어를 학습할 수 있는 서비스 입니다.   
 LipRead는 AI를 통해 제작된 대화 영상을 통해 청각장애인들의 독화 훈련과 청능 훈련을 도와 다양한 상황에서 의사소통을 원활히 할 수 있도록 도움을 주고자 합니다. 
 
-LipRead PPT (https://github.com/sookmyung-graduation-project-2023/lipread/blob/main/README.md)
+LipRead PPT (https://github.com/sookmyung-graduation-project-2023/Server/blob/main/PPT.md)
 
 
 ## 📚개발 기간
