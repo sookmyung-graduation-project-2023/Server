@@ -8,6 +8,7 @@ LipRead는 AI를 통해 제작된 대화 영상을 통해 청각장애인들의 
 
 LipRead PPT (https://github.com/sookmyung-graduation-project-2023/lipread/blob/main/README.md)
 
+
 ## 📚개발 기간
 2023.11.2 ~ 2024.03.19 
 
@@ -28,7 +29,7 @@ LipRead PPT (https://github.com/sookmyung-graduation-project-2023/lipread/blob/m
 
 ### 1. Login - API
 
-![image](https://github.com/sookmyung-graduation-project-2023/Server/assets/70003845/dea21347-bfe8-459e-bff7-a2cf7d0d3e5a)
+![image](https://github.com/sookmyung-graduation-project-2023/ML-Server/assets/70003845/94534eec-28ff-4eed-b828-9f2f14800e1f)
 
 Login-API에는 JWT를 활용한 로그인 및 토큰 리프레시를 수행합니다. 
 
