@@ -58,7 +58,8 @@ Login-API에는 JWT를 활용한 로그인 및 토큰 리프레시를 수행합�
 
 ![image](https://github.com/sookmyung-graduation-project-2023/ML-Server/assets/70003845/886e60e0-277f-4bb2-be14-3736ad411703)
 
-chat GPT를 통해 대화 텍스트를 생성한 후 영상 생성을 위해 ML 서버에 이를 전송합니다.
+chat GPT를 통해 대화 텍스트를 생성한 후 영상 생성을 위해 ML 서버에 이를 전송합니다.  
+ML - Server 설명 (https://github.com/sookmyung-graduation-project-2023/ML-Server/blob/main/README.md)  
 (chatRoleplay-api-with-SSE: 영상 생성 시 SSE를 이용한 실시간 진행 상황 전송)
 
 ### 6. Roleplay Status - API
