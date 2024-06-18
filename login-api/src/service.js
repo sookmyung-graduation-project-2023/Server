@@ -1,20 +1,22 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { SNSClient, CreatePlatformEndpointCommand } from "@aws-sdk/client-sns";
+import dynamoDB from "./dynamoDB.js";
 import jwt from "jsonwebtoken";
 
 const AWS_REGION = process.env.AWS_REGION;
 const JWT_SECRET = process.env.jwtSecret;
 const PLATFORM_APPLICATION_ARN = process.env.PLATFORM_APPLICATION_ARN;
 
-const ddbClient = new DynamoDBClient({ region: AWS_REGION });
-const docClient = DynamoDBDocumentClient.from(ddbClient);
+const createPlatformEndpoint = async (input) => {
+    const client = new SNSClient({ region: AWS_REGION });
+    const createPlatformEndpointCommand = new CreatePlatformEndpointCommand(input);
+    const platformEndpointResponse = await client.send(createPlatformEndpointCommand);
+    return platformEndpointResponse;
+};
 
 //사용자 회원가입
 const userSignUp = async (userID, data, refreshToken) => {
-    const client = new SNSClient({ region: AWS_REGION });
     //DB 사용자 정보 저장
-    const putUserCommand = new PutCommand({
+    await dynamoDB.put({
         TableName: "LipRead",
         Item: {
             PK: userID,
@@ -25,16 +27,14 @@ const userSignUp = async (userID, data, refreshToken) => {
             sentenceCnt: 0,
         },
     });
-    await docClient.send(putUserCommand);
     //엔드포인트 생성
     const input = { // CreatePlatformEndpointInput
         PlatformApplicationArn: PLATFORM_APPLICATION_ARN, 
         Token: data.deviceToken, 
     };
-    const createPlatformEndpointCommand = new CreatePlatformEndpointCommand(input);
-    const platformEndpointResponse = await client.send(createPlatformEndpointCommand);
+    const platformEndpointResponse = await createPlatformEndpoint(input);
     //DB 사용자 디바이스 정보 저장
-    const putUserDeviceCommand = new PutCommand({
+    await dynamoDB.put({
         TableName: "LipRead",
         Item: {
             PK: userID,
@@ -43,13 +43,11 @@ const userSignUp = async (userID, data, refreshToken) => {
             endpointArn: platformEndpointResponse.EndpointArn
         },
     });
-    await docClient.send(putUserDeviceCommand);
 };
 
 const userLogin = async (userID, data, refreshToken) => {
-    const client = new SNSClient({ region: AWS_REGION });
     //디바이스 로그인 기록 체크
-    const getUserDeviceCommand = new GetCommand({
+    const getUserDeviceResponse = await dynamoDB.get({
         TableName: "LipRead",
         Key: {
             PK: userID,
@@ -57,10 +55,9 @@ const userLogin = async (userID, data, refreshToken) => {
         },
         ProjectionExpression: "PK"
     });
-    const getUserDeviceResponse = await docClient.send(getUserDeviceCommand);
     if (getUserDeviceResponse.Item){ //해당 디바이스로 로그인 기록 O
         //리프레시 토큰 업데이트
-        const updateUserCommand = new UpdateCommand({
+        await dynamoDB.update({
             TableName: "LipRead",
             Key: {
                 PK: userID,
@@ -72,17 +69,15 @@ const userLogin = async (userID, data, refreshToken) => {
             },
             ReturnValues: "NONE",
         });
-        await docClient.send(updateUserCommand);  
     }else{ //해당 디바이스로 로그인 기록 X
         //엔드포인트 생성
         const input = { // CreatePlatformEndpointInput
             PlatformApplicationArn: PLATFORM_APPLICATION_ARN, 
             Token: data.deviceToken, 
         };
-        const createPlatformEndpointCommand = new CreatePlatformEndpointCommand(input);
-        const platformEndpointResponse = await client.send(createPlatformEndpointCommand);
+        const platformEndpointResponse = await createPlatformEndpoint(input);
         //DB 사용자 디바이스 정보 저장
-        const putUserDeviceCommand = new PutCommand({
+        await dynamoDB.put({
             TableName: "LipRead",
             Item: {
                 PK: userID,
@@ -91,7 +86,6 @@ const userLogin = async (userID, data, refreshToken) => {
                 endpointArn: platformEndpointResponse.EndpointArn
             },
         });
-        await docClient.send(putUserDeviceCommand);
     }
 };
 
@@ -103,7 +97,7 @@ const login = async (data) => {
         const accessToken = getAccessToken(userID);
         const refreshToken = getRefreshToken();
         //DB에 이미 존재하는 사용자인지 확인
-        const getUserCommand = new GetCommand({
+        const getUserResponse = await dynamoDB.get({
             TableName: "LipRead",
             Key: {
                 PK: userID,
@@ -111,7 +105,6 @@ const login = async (data) => {
             },
             ProjectionExpression: "PK"
         });
-        const getUserResponse = await docClient.send(getUserCommand);
         if (getUserResponse.Item) { // 로그인 처리
             message = "로그인 성공";
             await userLogin(userID, data, refreshToken); 
@@ -152,7 +145,7 @@ const refresh = async (accessToken, refreshToken, deviceToken) => {
             throw error;
         }
         //refresh 토큰 검증
-        const getUserRftokenCommand = new GetCommand({
+        const response = await dynamoDB.get({
             TableName: "LipRead",
             Key: {
                 PK: userID,
@@ -160,7 +153,6 @@ const refresh = async (accessToken, refreshToken, deviceToken) => {
             },
             ProjectionExpression: "rfToken"
         });
-        const response = await docClient.send(getUserRftokenCommand);
         if (!response.Item) {
             const error = new Error("비정상 refresh token으로 인한 실패");
             error.statusCode = 400;
@@ -225,5 +217,11 @@ const verifyToken = async (accessToken) => {
 export default {
     login,
     refresh,
+    userSignUp,
+    userLogin,
+    createPlatformEndpoint,
+    getAccessToken,
+    getRefreshToken,
+    verifyToken
 };
 
