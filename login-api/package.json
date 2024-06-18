@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "author": "",
   "license": "ISC",
@@ -14,5 +14,9 @@
     "@aws-sdk/client-sns": "^3.525.0",
     "@aws-sdk/lib-dynamodb": "^3.489.0",
     "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@babel/plugin-transform-modules-commonjs": "^7.24.7",
+    "jest": "^29.7.0"
   }
 }
