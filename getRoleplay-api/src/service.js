@@ -1,15 +1,9 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-
-const AWS_REGION = process.env.AWS_REGION;
-
-const ddbClient = new DynamoDBClient({ region: AWS_REGION });
-const docClient = DynamoDBDocumentClient.from(ddbClient);
+import dynamoDB from "./dynamoDB.js";
 
 const getOfficialRoleplayList = async (queryStringParameters, auth) => {
     try{
          //공식 역할극 리스트
-        const getOfficialRoleplayListCommand = new QueryCommand({
+        const getOfficialRoleplayListCommand = {
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
             ExpressionAttributeValues: {
@@ -17,10 +11,10 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
                 ":sk": "o"
             },
             ProjectionExpression: "SK, title, emoji, category"
-        });
+        };
         //학습기록이 있는 공식 리스트
         const userID = auth.id;
-        const getOfficialRecordListCommand = new QueryCommand({
+        const getOfficialRecordListCommand = {
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
             ExpressionAttributeValues: {
@@ -28,16 +22,15 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
                 ":sk": "ro"
             },
             ProjectionExpression: "SK"
-        });
+        };
         //DB에 요청 전송
         const [data, recordData] = await Promise.all([
-            docClient.send(getOfficialRoleplayListCommand),
-            docClient.send(getOfficialRecordListCommand)
+            dynamoDB.query(getOfficialRoleplayListCommand),
+            dynamoDB.query(getOfficialRecordListCommand)
         ]);
         let response = data.Items;
         const recordResponse = recordData.Items;
-        
-        
+    
         if (queryStringParameters){ //쿼리 스트링이 존재한다면
             const categoryResponse = [];
             for (let i of response){ //쿼리스트링의 값과 같은 경우만 리스트에 삽입
@@ -70,7 +63,7 @@ const getOfficialRoleplayList = async (queryStringParameters, auth) => {
 const getPersonalRoleplayList = async (auth) => {
     try{
         const userID = auth.id;
-        const getPersonalRoleplayListCommand = new QueryCommand({
+        const getPersonalRoleplayListCommand = {
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
             ExpressionAttributeValues: {
@@ -79,8 +72,8 @@ const getPersonalRoleplayList = async (auth) => {
             },
             ProjectionExpression: "SK, title, emoji, parentTitle, updatedAt, #s",
             ExpressionAttributeNames: {'#s': 'status'},
-        });
-        const data = await docClient.send(getPersonalRoleplayListCommand);
+        };
+        const data = await dynamoDB.query(getPersonalRoleplayListCommand);
         //이미 생성 완료된 역할극만 모으기
         const response = [];
         for (let roleplay of data.Items){
@@ -106,15 +99,15 @@ const getRoleplay = async (roleplayID, auth) => {
         const userID = auth.id;
         console.log(roleplayID);
         if (roleplayID.slice(0, 2) == 'rp'){ //맞춤형 역할극인 경우
-            const getRoleplayCommand = new GetCommand({
+            const getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: userID,
                     SK: roleplayID,
                 },
                 ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type, study, parentTitle"
-            });
-            const response = await docClient.send(getRoleplayCommand);
+            };
+            const response = await dynamoDB.get(getRoleplayCommand);
             response.Item.roleplayID = roleplayID;
             if (response.Item.study.learnCnt == 0){ //학습 횟수가 0이면 study 객체 제거
                 delete response.Item.study;
@@ -127,39 +120,39 @@ const getRoleplay = async (roleplayID, auth) => {
             return response.Item;
             
         }else if(roleplayID[0] == 'o'){ //학습 기록 없는 공식 역할극인 경우
-            const getRoleplayCommand = new GetCommand({
+            const getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: "t",
                     SK: roleplayID,
                 },
                 ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type, category"
-            });
-            const response = await docClient.send(getRoleplayCommand);
+            };
+            const response = await dynamoDB.get(getRoleplayCommand);
             response.Item.roleplayID = roleplayID;
             return response.Item;
             
         }else if(roleplayID.slice(0, 2) == 'ro'){ //학습 기록 있는 공식 역할극인 경우
-            const getRoleplayCommand = new GetCommand({ //공식 역할극 정보 불러오기
+            const getRoleplayCommand = { //공식 역할극 정보 불러오기
                 TableName: "LipRead",
                 Key: {
                     PK: 't',
                     SK: roleplayID.slice(1),
                 },
                 ProjectionExpression: "title, description, emoji, role1, role1Desc, role1Type, role2, role2Desc, role2Type, category"
-            });
-            const getRecordCommand = new GetCommand({ //역할극 학습 기록 불러오기
+            };
+            const getRecordCommand = { //역할극 학습 기록 불러오기
                 TableName: "LipRead",
                 Key: {
                     PK: userID,
                     SK: roleplayID,
                 },
                 ProjectionExpression: "study"
-            });
+            };
             //DB에 요청 전송
             const [roleplayData, recordData] = await Promise.all([
-                docClient.send(getRoleplayCommand),
-                docClient.send(getRecordCommand)
+                dynamoDB.get(getRoleplayCommand),
+                dynamoDB.get(getRecordCommand)
             ]);
             roleplayData.Item.roleplayID = roleplayID;
             roleplayData.Item.study =recordData.Item.study;
@@ -183,36 +176,36 @@ const getRoleplayChatList = async (roleplayID, auth) => {
         const userID = auth.id; 
         let getRoleplayCommand;  
         if (roleplayID.slice(0, 2) == 'rp'){
-            getRoleplayCommand = new GetCommand({
+            getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: userID,
                     SK: roleplayID,
                 },
                 ProjectionExpression: "chatList"
-            });
+            };
             
         }else if(roleplayID[0] == 'o'){
-            getRoleplayCommand = new GetCommand({
+            getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: "t",
                     SK: roleplayID,
                 },
                 ProjectionExpression: "chatList"
-            });
+            };
             
         }else if (roleplayID.slice(0, 2) == 'ro'){
-            getRoleplayCommand = new GetCommand({
+            getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: "t",
                     SK: roleplayID.slice(1),
                 },
                 ProjectionExpression: "chatList"
-            });
+            };
         }
-        const response = await docClient.send(getRoleplayCommand);
+        const response = await dynamoDB.get(getRoleplayCommand);
         response.Item.roleplayID = roleplayID;
         return response.Item;
     }catch(error){
