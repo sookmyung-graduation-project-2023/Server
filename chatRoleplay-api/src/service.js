@@ -1,16 +1,10 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
+import dynamoDB from "./dynamoDB.js";
 import OpenAI from 'openai';
 import axios from 'axios';
 
-const AWS_REGION = process.env.AWS_REGION;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const videoUrlOrigin = process.env.videoUrlOrigin;
 const VIDEO_SERVER_URL = process.env.VIDEO_SERVER_URL;
-
-const ddbClient = new DynamoDBClient({ region: AWS_REGION });
-const docClient = DynamoDBDocumentClient.from(ddbClient);
 
 const createID = () => {
     const random = Math.random().toString(36).substring(2, 11);
@@ -71,7 +65,7 @@ const createNewTopicRolePlay = async (data, auth) => {
         const updatedAt = Date.now();
         console.log(data.title);
         
-        const putRoleplayCommand = new PutCommand({
+        const putRoleplayCommand = {
             TableName: "LipRead",
             Item: {
                 PK: userID,
@@ -94,15 +88,16 @@ const createNewTopicRolePlay = async (data, auth) => {
                 status: "inprogress",
                 percentage: 0
             },
-        });
+        };
         const [putRoleplay, gptText] = await Promise.all([
-            docClient.send(putRoleplayCommand), 
+            dynamoDB.put(putRoleplayCommand), 
             createChat(data, roleplayID)
         ]);
         console.log("역할극 업로드 완료");
         console.log("채팅 생성 완료");
+        console.log(gptText);
         //역할극 채팅 업데이트
-        const updateRoleplayCommand = new UpdateCommand({
+        const updateRoleplayCommand = {
             TableName: "LipRead",
             Key: {
                 PK: userID,
@@ -115,8 +110,8 @@ const createNewTopicRolePlay = async (data, auth) => {
                 ":percentage": 10
             },
             ReturnValues: "NONE",
-        });
-        await docClient.send(updateRoleplayCommand);
+        };
+        await dynamoDB.update(updateRoleplayCommand);
         console.log("채팅 업로드 완료");
         //영상 생성 시작
         const body = {
@@ -144,7 +139,7 @@ const createUsedTopicRolePlay = async (data, auth) => {
         const updatedAt = Date.now();
         console.log(roleplayID);
         
-        const putRoleplayCommand = new PutCommand({
+        const putRoleplayCommand = {
             TableName: "LipRead",
             Item: {
                 PK: userID,
@@ -160,8 +155,8 @@ const createUsedTopicRolePlay = async (data, auth) => {
                 status: "inprogress",
                 percentage: 0
             },
-        });
-        await docClient.send(putRoleplayCommand);
+        };
+        await dynamoDB.put(putRoleplayCommand);
         console.log("역할극 업로드 완료");
         
         console.log("부모 역할극");
@@ -169,27 +164,27 @@ const createUsedTopicRolePlay = async (data, auth) => {
         let response;
         //roleplayID를 통한 부모 역할극 데이터 불러오기
         if (data.parentRoleplayID.slice(0, 2) == 'rp'){ //맞춤형 역할극인 경우
-            const getRoleplayCommand = new GetCommand({
+            const getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: userID,
                     SK: data.parentRoleplayID,
                 },
                 ProjectionExpression: "title, description, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
-            });
-            response = await docClient.send(getRoleplayCommand);
+            };
+            response = await dynamoDB.get(getRoleplayCommand);
             
         }else if(data.parentRoleplayID.slice(0, 2) == 'ro'){
             console.log(data.parentRoleplayID.substr(1));
-            const getRoleplayCommand = new GetCommand({ //공식 역할극 정보 불러오기
+            const getRoleplayCommand = { //공식 역할극 정보 불러오기
                 TableName: "LipRead",
                 Key: {
                     PK: 't',
                     SK: data.parentRoleplayID.substr(1),
                 },
                 ProjectionExpression: "title, description, role1, role1Desc, role1Type, role2, role2Desc, role2Type"
-            });
-            response = await docClient.send(getRoleplayCommand);
+            };
+            response = await dynamoDB.get(getRoleplayCommand);
         }
         console.log("부모 역할극 데이터 가져오기 완료");
         if (!response.Item){
@@ -217,7 +212,7 @@ const createUsedTopicRolePlay = async (data, auth) => {
         console.log(gptText.chatList);
         
         //역할극 채팅 및 데이터 업데이트
-        const updateRoleplayCommand = new UpdateCommand({
+        const updateRoleplayCommand = {
             TableName: "LipRead",
             Key: {
                 PK: userID,
@@ -238,8 +233,8 @@ const createUsedTopicRolePlay = async (data, auth) => {
                 ":percentage": 10,
             },
             ReturnValues: "NONE",
-        });
-        await docClient.send(updateRoleplayCommand);
+        };
+        await dynamoDB.update(updateRoleplayCommand);
         console.log("채팅 및 데이터 업로드 완료");
         
         //영상 생성 시작
@@ -263,6 +258,7 @@ const createUsedTopicRolePlay = async (data, auth) => {
 };
 
 export default {
+    createChat,
     createNewTopicRolePlay,
     createUsedTopicRolePlay,
 };
