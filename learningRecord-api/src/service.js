@@ -1,10 +1,5 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-
+import dynamoDB from "./dynamoDB.js";
 const AWS_REGION = process.env.AWS_REGION;
-
-const ddbClient = new DynamoDBClient({ region: AWS_REGION });
-const docClient = DynamoDBDocumentClient.from(ddbClient);
 
 const postLearningRecord = async(roleplayID, data, auth) =>{
     try{
@@ -12,15 +7,15 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
         const ceatedAt = Date.now();
         if (roleplayID[0] == 'r'){ //맞춤형 역할극 or 학습 기록이 있는 공식 역할극
             //2-1. 해당 역할극에 대한 총 학습 기록 수정을 위한 확인
-            const getRoleplayCommand = new GetCommand({
+            const getRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: userID,
                     SK: roleplayID,
                 },
                 ProjectionExpression: "study"
-            });
-            const studyData = await docClient.send(getRoleplayCommand);
+            };
+            const studyData = await dynamoDB.get(getRoleplayCommand);
             console.log("기존 역할극 학습 데이터");
             console.log(studyData.Item.study);
             //2-2. 역할극에 대한 총 학습 기록 업데이트
@@ -38,7 +33,7 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 sentences: newSentences,
                 learnCnt: studyData.Item.study.learnCnt+1
             };
-            const updateRoleplayCommand = new UpdateCommand({
+            const updateRoleplayCommand = {
                 TableName: "LipRead",
                 Key: {
                     PK: userID,
@@ -50,8 +45,8 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                     ":updatedAt": ceatedAt,
                 },
                 ReturnValues: "NONE",
-            });
-            await docClient.send(updateRoleplayCommand);
+            };
+            await dynamoDB.update(updateRoleplayCommand);
             console.log("기존 역할극 학습 데이터 수정 후");
             console.log(newStudy);
             
@@ -62,7 +57,7 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
             for (let i of data.study.sentenceList){
                 newSentences[i.sentence] = 1;
             }
-            const putRoleCommand = new PutCommand({
+            const putRoleCommand ={
                 TableName: "LipRead",
                 Item: {
                     PK: userID,
@@ -77,8 +72,8 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                     title: data.title,
                     emoji: data.emoji
                 },
-            });
-            await docClient.send(putRoleCommand);
+            };
+            await dynamoDB.put(putRoleCommand);
             console.log("기존 역할극 학습 데이터 수정 후")
             console.log({
                 sentences: newSentences, //List
@@ -90,20 +85,20 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
         
         //--------공통 작업 사항--------
         //3-1. 사용자 학습 기록 수정을 위한 확인
-        const getUserCommand = new GetCommand({
+        const getUserCommand = {
             TableName: "LipRead",
             Key: {
                 PK: userID,
                 SK: userID,
             },
             ProjectionExpression: "sentenceCnt, totalTime"
-        });
-        const UserData = await docClient.send(getUserCommand);
+        };
+        const UserData = await dynamoDB.get(getUserCommand);
         console.log("기존 사용자 학습량");
         console.log(UserData.Item.sentenceCnt);
         console.log(UserData.Item.totalTime);
         //3-2. 사용자 학습기록 업데이트
-        const updateUserCommand = new UpdateCommand({
+        const updateUserCommand = {
             TableName: "LipRead",
             Key: {
                 PK: userID,
@@ -115,12 +110,12 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                 ":totalTime": UserData.Item.totalTime + data.study.totalTime
             },
             ReturnValues: "NONE",
-        });
+        };
         console.log("기존 사용자 학습량 수정 후");
         console.log(UserData.Item.sentenceCnt + data.sentenceCnt);
         console.log(UserData.Item.totalTime + data.study.totalTime);
         //1. 학습에 대한 기록 생성
-        const putRecordCommand = new PutCommand({
+        const putRecordCommand = {
             TableName: "LipRead",
             Item: {
                 PK: userID,
@@ -133,11 +128,11 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
                     correctRate: data.study.correctRate
                 }
             },
-        });
+        };
         //DB에 요청 전송
         await Promise.all([
-            docClient.send(updateUserCommand),
-            docClient.send(putRecordCommand)
+            dynamoDB.update(updateUserCommand),
+            dynamoDB.put(putRecordCommand)
         ]);
     }catch(error){
         throw error;
@@ -147,15 +142,15 @@ const postLearningRecord = async(roleplayID, data, auth) =>{
 const getUserlearningData = async (auth) =>{
     try{
         const userID = auth.id;
-        const getUserCommand = new GetCommand({
+        const getUserCommand = {
             TableName: "LipRead",
             Key: {
                 PK: userID,
                 SK: userID,
             },
             ProjectionExpression: "sentenceCnt, totalTime"
-        });
-        const userData = await docClient.send(getUserCommand);        
+        };
+        const userData = await dynamoDB.get(getUserCommand);        
         return {
             sentenceCnt: userData.Item.sentenceCnt,
             totalTime: userData.Item.totalTime,
@@ -168,7 +163,7 @@ const getUserlearningData = async (auth) =>{
 const getUserRoleplayList = async (auth) => {
     try{
         const userID = auth.id;
-        const getRoleplayListCommand = new QueryCommand({
+        const getRoleplayListCommand = {
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND begins_with( SK, :sk )",
             ExpressionAttributeValues: {
@@ -177,8 +172,8 @@ const getUserRoleplayList = async (auth) => {
             },
             ProjectionExpression: "SK, title, emoji, updatedAt, #s",
             ExpressionAttributeNames: {'#s': 'status'},
-        });   
-        const roleplayListdata = await docClient.send(getRoleplayListCommand);
+        };   
+        const roleplayListdata = await dynamoDB.query(getRoleplayListCommand);
         const roleplayList = roleplayListdata.Items;
         console.log("데이터베이스에 저장된 것");
         console.log(roleplayList);
@@ -222,7 +217,7 @@ const getUserMonthlyData = async (queryStringParameters, auth) => {
         begin = "l"+new Date(year, month-1, 1, 0, 0).getTime(); //0월부터 시작하므로.
         end = "l"+new Date(year, month, 1, 0, 0).getTime();
         
-        const getRecordListCommand = new QueryCommand({
+        const getRecordListCommand = {
             TableName: "LipRead",
             KeyConditionExpression: "PK = :pk AND (SK BETWEEN :begin AND :end)",
             ExpressionAttributeValues: {
@@ -232,8 +227,8 @@ const getUserMonthlyData = async (queryStringParameters, auth) => {
             },
             ProjectionExpression: "SK, title, emoji",
             ScanIndexForward: false //최신순
-        });
-        const recordListdata = await docClient.send(getRecordListCommand);
+        };
+        const recordListdata = await dynamoDB.query(getRecordListCommand);
         
         const newRecordList = [];
         const checkDateList = [];
@@ -275,15 +270,15 @@ const getUserMonthlyData = async (queryStringParameters, auth) => {
 const getLearningRecord = async (recordID, auth) => {
     try{
         const userID = auth.id;
-        const getRecordCommand = new GetCommand({
+        const getRecordCommand = {
             TableName: "LipRead",
             Key: {
                 PK: userID,
                 SK: recordID,
             },
             ProjectionExpression: "SK, title, emoji, study"
-        });
-        const recordData = await docClient.send(getRecordCommand);
+        };
+        const recordData = await dynamoDB.get(getRecordCommand);
         recordData.Item.recordID = recordData.Item.SK;
         delete recordData.Item.SK;
         return recordData.Item
